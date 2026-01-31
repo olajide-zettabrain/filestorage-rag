@@ -1,0 +1,105 @@
+services:
+  # Backend API - Production Configuration
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: zettabrain-backend-prod
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - nfs_storage:/mnt/nfs
+      - rag_data:/mnt/nfs/rag_storage
+      - app_data:/var/lib/zettabrain
+      - ./backend/logs:/app/logs
+    environment:
+      - ENVIRONMENT=production
+      - WORKERS=4
+      - LOG_LEVEL=info
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_ENVIRONMENT=${PINECONE_ENVIRONMENT}
+    networks:
+      - zettabrain-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Frontend - Production Configuration
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: zettabrain-frontend-prod
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - zettabrain-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  zettabrain-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  nfs_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/zettabrain/nfs
+  rag_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/zettabrain/rag
+  app_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/zettabrain
